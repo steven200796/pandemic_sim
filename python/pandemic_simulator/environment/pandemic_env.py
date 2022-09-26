@@ -187,8 +187,8 @@ class PandemicGymEnv3Act(gym.ActionWrapper):
         }
         self.observation_space = gym.spaces.MultiDiscrete(np.ones(shape=(1, 1, 5+1+1+1)), 
                                                           dtype=np.float32)
-        # note that the action space for the learner is {-1, 0, 1}; different than the action space of the PandemicGymEnv
-        self.action_space = gym.spaces.Discrete(3, start=-1)
+        # note that the action space for the learner is {0, 1, 2}; different than the action space of the PandemicGymEnv
+        self.action_space = gym.spaces.Discrete(3)
 
     @classmethod
     def from_config(self,
@@ -217,25 +217,31 @@ class PandemicGymEnv3Act(gym.ActionWrapper):
                                # unlocked_non_essential_business_locations is always none so it is excluded
             ], axis=-1)
 
-    def step(self, action):
+    def step(self, action, flatten_obs=True):
         action = int(action)
         obs, reward, done, info = self.env.step(self.remap_action(action))
-        flattened_obs = self.flatten_obs(obs)
+        # TODO: look into why the shape of the obs has 3 dimensions
+        info["infection_above_threshold"] = obs.infection_above_threshold[0, 0, 0]
+        if flatten_obs:
+            obs = self.flatten_obs(obs)
         # also return done if we reach the maximal number of days
         self.current_days += 1
         done = done or (self.current_days >= self.max_days)
 
-        return flattened_obs, reward, done, info
+        return obs, reward, done, info
 
     def remap_action(self, action):
         '''Remap action back to stages
         '''
         assert self.action_space.contains(action), "%r (%s) invalid" % (action, type(action))
+        action -= 1 # map actions from range {0, 1, 2} into {-1, 0, 1}
         remapped_action = int(min(4, max(0, self.env._last_observation.stage[-1, 0, 0] + action)))
         return remapped_action
     
-    def reset(self):
+    def reset(self, flatten_obs=True):
         self.current_days = 0
         obs = self.env.reset()
-        return self.flatten_obs(obs)
+        if flatten_obs:
+            obs = self.flatten_obs(obs)
+        return obs
         

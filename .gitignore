@@ -28,5 +28,6 @@ pip.log
 test-results
 *.egg-info/
 
-scripts/tutorials/log/
+scripts/tutorials/log/*
 scripts/tutorials/slurm*
+PandemicSimulatorTutorial.code-workspace
