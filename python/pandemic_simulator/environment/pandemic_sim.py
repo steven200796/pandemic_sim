@@ -165,6 +165,64 @@ class PandemicSim:
         """Return registry"""
         return self._registry
 
+    def _compute_contacts_matrix(self, location: Location) -> OrderedSet:
+        assignees = location.state.assignees_in_location
+        visitors = location.state.visitors_in_location
+
+        assignees_breakdown = [[] for i in range(len(location.state.contact_rate_matrix.assignee_roles))]
+        visitors_breakdown = [[] for i in range(len(location.state.contact_rate_matrix.visitor_roles))]
+
+        for assignee in assignees:
+            idx = np.random.choice(np.arange(0, len(location.state.assignee_roles)), p=location.state.assignee_roles)
+            assignees_breakdown[idx].append(assignee)
+        for visitor in visitors:
+            idx = np.random.choice(np.arange(0, len(location.state.visitor_roles)), p=location.state.visitor_roles)
+            visitors_breakdown[idx].append(visitor)
+
+        cr = location.state.contact_rate 
+        fractions = location.state.contact_rate_matrix.fraction_contact_matrix
+
+        concat_assignee_visitors = assignees_breakdown + visitors_breakdown
+        concat_role_distribution = location.state.assignee_roles + location.state.visitor_roles 
+
+        groupsIdx = [(i,j) for i in range(len(concat_assignee_visitors)) for j in range(i + 1)]
+
+        contacts: OrderedSet = OrderedSet()
+        # the splitting index from assignees ending to visitors beginning, inclusive 
+        split = location.state.contact_rate_matrix.get_split() 
+
+        for grpIdx in groupsIdx:
+            i, j = grpIdx[0], grpIdx[1]
+            grp1 = concat_assignee_visitors[i]
+            grp2 = concat_assignee_visitors[j]
+
+            fraction = fractions[i][j]
+            # We round the minimum by its breakdown in the role distribution
+            # But this fails for small minimums and a high number of roles
+            minimum = concat_role_distribution[i] * concat_role_distribution[j]
+            if i >= split and j >= split:
+                minimum *= cr.min_visitors
+            elif i < split and j < split:
+                minimum *= cr.min_assignees
+            else: 
+                minimum *= cr.min_assignees_visitors 
+            minimum = int(minimum)
+
+            possible_contacts = list(combinations(grp1, 2) if grpIdx[0] == grpIdx[1] else cartesianproduct(grp1, grp2))
+            num_possible_contacts = len(possible_contacts)
+
+            if len(possible_contacts) == 0:
+                continue
+
+            fraction_sample = min(1., max(0., self._numpy_rng.normal(fraction, 1e-2)))
+            real_fraction = max(minimum, int(fraction_sample * num_possible_contacts))
+
+            # we are using an orderedset, it's repeatable
+            contact_idx = self._numpy_rng.randint(0, num_possible_contacts, real_fraction)
+            contacts.update([possible_contacts[idx] for idx in contact_idx])
+
+        return contacts
+
     def _compute_contacts(self, location: Location) -> OrderedSet:
         assignees = location.state.assignees_in_location
         visitors = location.state.visitors_in_location
@@ -274,7 +332,11 @@ class PandemicSim:
 
         # update person contacts
         for location in self._id_to_location.values():
-            contacts = self._compute_contacts(location)
+            if location.state.contact_rate_matrix:
+                # Use the richer role breakdown matrix
+                contacts = self._compute_contacts_matrix(location)
+            else:
+                contacts = self._compute_contacts(location)
 
             if self._contact_tracer:
                 self._contact_tracer.add_contacts(contacts)
