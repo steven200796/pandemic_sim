@@ -2,14 +2,14 @@
 
 
 from dataclasses import dataclass, field
-from typing import Set
+from typing import Set, List
 
 from orderedset import OrderedSet
 
 from .ids import PersonID
 from .sim_time import SimTimeTuple
 
-__all__ = ['LocationState', 'ContactRate', 'NonEssentialBusinessLocationState',
+__all__ = ['LocationState', 'ContactRate', 'ContactRateMatrix', 'NonEssentialBusinessLocationState',
            'BusinessLocationState']
 
 
@@ -41,12 +41,31 @@ class ContactRate:
         assert 0 <= self.fraction_visitors <= 1
 
 
+@dataclass(frozen=True)
+class ContactRateMatrix:
+    fraction_contact_matrix : List[List[float]]
+    assignee_roles : List[float]
+    visitor_roles : List[float]
+    def get_split(self):
+        return len(self.assignee_roles)
+
+# to be added later
+#    min_contact_list : List[float]
+    """ Defines contact rates generally in a location"""
+    def __post_init__(self) -> None:
+        for row in self.fraction_contact_matrix:
+            for frac in row:
+                assert 0 <= frac <= 1
+
 @dataclass
 class LocationState:
     """State of the location."""
 
     contact_rate: ContactRate = ContactRate(1, 1, 0, 0.5, 0., 0.)
     """Rate at which assignees interact with other persons at that location."""
+
+    contact_rate_matrix: ContactRateMatrix = None
+    """Experimental Symmetric Contact Matrix and corresponding role breakdowns of assignees and visitors"""
 
     visitor_capacity: int = -1
     """Number of visitors allowed during the visitor_time"""
